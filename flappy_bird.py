@@ -154,9 +154,7 @@ def main():
     allowed_action = p.getActionSet()
     agent = HyperBird(input_shape=input_shape, allowed_actions=allowed_action)
 
-    # agent.load("./save/cartpole-ddqn.h5")
-    done = False
-    batch_size = 64
+    batch_size = 32
 
     p.init()
     nb_frames = 10000
