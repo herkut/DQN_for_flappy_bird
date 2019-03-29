@@ -16,19 +16,21 @@ import keras
 
 import tensorflow as tf
 
+from batch_normalizer import BatchNormalizer
 
-class UberBrain:
+
+class PortableBrain:
     def __init__(self, input_size, action_size):
-        self._input_size = input_size
-        self._action_size = action_size
-        self._memory = deque(maxlen=1000)
-        self._gamma = 0.95  # discount rate
-        self._epsilon = 1.0  # exploration rate
-        self._epsilon_min = 0.001
-        self._epsilon_decay = 0.9999
-        self._learning_rate = 0.001
-        self._model = self.build_model_for_brain()
-        self._target_model = self.build_model_for_brain()
+        self.input_size = input_size
+        self.action_size = action_size
+        self.memory = deque(maxlen=1000)
+        self.gamma = 0.95  # discount rate
+        self.epsilon = 1.0  # exploration rate
+        self.epsilon_min = 0.001
+        self.epsilon_decay = 0.9999
+        self.learning_rate = 0.001
+        self.model = self.build_model_for_brain()
+        self.target_model = self.build_model_for_brain()
         self.update_target_model()
 
     """
@@ -37,11 +39,11 @@ class UberBrain:
 
     def build_model_for_brain(self):
         model = Sequential()
-        model.add(Dense(64, input_dim=self._input_size[1], activation='relu'))
+        model.add(Dense(64, input_dim=self.input_size, activation='relu'))
         model.add(Dense(32, activation='relu'))
         model.add(Dense(16, activation='relu'))
-        model.add(Dense(self._action_size, activation='linear'))
-        model.compile(loss=self.huber_loss, optimizer=Adam(lr=self._learning_rate))
+        model.add(Dense(self.action_size, activation='linear'))
+        model.compile(loss=self.huber_loss, optimizer=Adam(lr=self.learning_rate))
 
         return model
 
@@ -65,47 +67,20 @@ class UberBrain:
     def remember(self, state, action, reward, next_state, done):
         self.memory.append((state, action, reward, next_state, done))
 
-    @property
-    def model(self):
-        return self._model
-
-    @property
-    def epsilon(self):
-        return self._epsilon
-
-    @property
-    def epsilon_min(self):
-        return self._epsilon_min
-
-    @property
-    def target_model(self):
-        return self._target_model
-
-    @property
-    def epsilon_decay(self):
-        return self._epsilon_decay
-
-    @property
-    def gamma(self):
-        return self._gamma
-
-    @property
-    def memory(self):
-        return self._memory
-
 
 class HyperBird:
 
-    def __init__(self, input_shape=None, allowed_actions=None):
-        self._input_shape = input_shape
-        self._allowed_actions = allowed_actions
-        self._action_size = len(self._allowed_actions)
-        self._brain = UberBrain(self._input_shape, len(self._allowed_actions))
+    def __init__(self, input_size=None, allowed_actions=None):
+        self.input_size = input_size
+        self.allowed_actions = allowed_actions
+        self.batch_normalizer = BatchNormalizer()
+        self.action_size = len(self.allowed_actions)
+        self.brain = PortableBrain(self.input_size, len(self.allowed_actions))
 
     def pick_action(self, state, is_being_trained=False):
         if is_being_trained:
-            if np.random.rand() <= self._brain.epsilon:
-                return random.randrange(self._action_size)
+            if np.random.rand() <= self.brain.epsilon:
+                return random.randrange(self.action_size)
 
             act_values = self.predict(state)
 
@@ -116,43 +91,56 @@ class HyperBird:
             return np.argmax(act_values[0])  # returns action
 
     def replay(self, batch_size):
-        minibatch = random.sample(self._brain.memory, batch_size)
-        #print('Minibatch size: ' + str(len(minibatch)))
-        for state, action, reward, next_state, done in minibatch:
-            #print('Current reward:' + str(reward))
-            target = self._brain.model.predict(state)
-            if done:
-                target[0][action] = reward
-            else:
-                # a = self.model.predict(next_state)[0]
-                t = self._brain.target_model.predict(next_state)[0]
-                target[0][action] = reward + self._brain.gamma * np.amax(t)
-                # target[0][action] = reward + self.gamma * t[np.argmax(a)]
-            # train network
-            self._brain.model.fit(state, target, epochs=1, verbose=0)
-        if self._brain.epsilon > self._brain.epsilon_min:
-            self._brain.epsilon *= self._brain.epsilon_decay
+        minibatch = random.sample(self.brain.memory, batch_size)
+        normalized_minibatch = self.batch_normalizer.normalize_batch(minibatch)
+
+        for states, actions, rewards, next_states, dones in normalized_minibatch:
+            for i in range(np.shape(states)[0]):
+                state = np.reshape(states[i], [1, len(states[i])])
+                action = actions[i]
+                reward = rewards[i]
+                next_state = np.reshape(next_states[i], [1, len(next_states[i])])
+                done = dones[i]
+
+                target = self.brain.model.predict(state)
+                if done:
+                    target[0][action] = reward
+                else:
+                    t = self.brain.target_model.predict(next_state)[0]
+                    target[0][action] = reward + self.brain.gamma * np.amax(t)
+
+                # train network
+                self.brain.model.fit(state, target, epochs=1, verbose=0)
+        if self.brain.epsilon > self.brain.epsilon_min:
+            self.brain.epsilon = self.brain.epsilon * self.brain.epsilon_decay
 
     def remember(self, state, action, reward, next_state, done):
-        self._brain.remember(state, action, reward, next_state, done)
+        self.brain.remember(state, action, reward, next_state, done)
 
     def predict(self, state):
-        return self._brain.model.predict(state)
+        state = np.reshape(state, [1, len(state)])
+        return self.brain.model.predict(state)
 
     def update_brain(self):
-        self._brain.update_target_model()
+        self.brain.update_target_model()
 
     def load_brain_state(self, name):
-        self._brain.model.load_weights(name)
+        self.brain.model.load_weights(name)
 
     def save_brain_state(self, name):
-        self._brain.model.save_weights(name)
+        self.brain.model.save_weights(name)
 
 
 ############
 ############
+
 def process_state(state):
-    return np.array([state.values()])
+    s = np.zeros(len(state))
+    i = 0
+    for k, v in state.items():
+        s[i] = v
+        i += 1
+    return s
 
 
 EPISODES = 100000
@@ -161,9 +149,10 @@ EPISODES = 100000
 def train_the_bird():
     game = FlappyBird()
     p = PLE(game, display_screen=True, state_preprocessor=process_state)
-    input_shape = p.getGameStateDims()
+    #input_shape = p.getGameStateDims()
+    input_size = 8
     allowed_action = p.getActionSet()
-    agent = HyperBird(input_shape=input_shape, allowed_actions=allowed_action)
+    agent = HyperBird(input_size=input_size, allowed_actions=allowed_action)
 
     batch_size = 32
     brain_update_frequency = 100
@@ -179,11 +168,11 @@ def train_the_bird():
         for t in range(10000):
             #print('iteration: ' + str(t) + ' in episode: ' + str(e))
             state = p.getGameState()
-            state = np.reshape(state, [1, input_shape[1]])
+            #state = np.reshape(state, [1, input_size])
             action = agent.pick_action(state, True)
             reward = p.act(allowed_action[action])
             next_state = p.getGameState()
-            next_state = np.reshape(next_state, [1, input_shape[1]])
+            #next_state = np.reshape(next_state, [1, input_size])
 
             if reward > 0:
                 reward = 1
@@ -192,11 +181,11 @@ def train_the_bird():
 
             agent.remember(state, action, reward, next_state, p.game_over())
 
-            if len(agent._brain.memory) > batch_size:
+            if len(agent.brain.memory) > batch_size:
                 agent.replay(batch_size)
 
             if p.game_over():
-                print("episode: {}/{}, score: {}, reward: {}, e: {:.2}".format(e, EPISODES, t, reward, agent._brain.epsilon))
+                print("episode: {}/{}, score: {}, reward: {}, e: {:.2}".format(e, EPISODES, t, reward, agent.brain.epsilon))
                 print('Updating the brain')
                 agent.update_brain()
                 break
@@ -230,10 +219,11 @@ def let_trained_bird_play_the_game(agent=None):
     for t in range(100000):
         state = p.getGameState()
         state = np.reshape(state, [1, input_shape[1]])
+        #state = np.array(list(state.items), np.float)
         action = agent.pick_action(state)
         reward = p.act(allowed_action[action])
         next_state = p.getGameState()
-        next_state = np.reshape(next_state, [1, input_shape[1]])
+        #next_state = np.reshape(next_state, [1, input_shape[1]])
 
         if reward > 0:
             reward = 1
