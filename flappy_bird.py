@@ -24,7 +24,7 @@ class UberBrain:
         self._memory = deque(maxlen=1000)
         self._gamma = 0.95  # discount rate
         self._epsilon = 1.0  # exploration rate
-        self._epsilon_min = 0.01
+        self._epsilon_min = 0.001
         self._epsilon_decay = 0.9999
         self._learning_rate = 0.001
         self._model = self.build_model_for_brain()
@@ -155,7 +155,7 @@ def process_state(state):
     return np.array([state.values()])
 
 
-EPISODES = 50000
+EPISODES = 100000
 
 
 def train_the_bird():
@@ -176,7 +176,7 @@ def train_the_bird():
     for e in range(EPISODES):
         p.reset_game()
 
-        for t in range(5000):
+        for t in range(10000):
             #print('iteration: ' + str(t) + ' in episode: ' + str(e))
             state = p.getGameState()
             state = np.reshape(state, [1, input_shape[1]])
