@@ -43,30 +43,27 @@ def train_the_bird():
         print("Episode: {}/{}".format(e, EPISODES))
         total_reward = 0
         for t in range(10000):
-            # state = np.reshape(state, [1, input_size])
             action = agent.pick_action(observation, True)
             reward = p.act(allowed_action[action])
             next_observation = p.getGameState()
 
             # reward for passing a pipe
             if reward > 0:
-                total_reward += 1
+                total_reward = 1
             # reward for staying alive
             elif reward == 0:
-                total_reward += 0.001
+                total_reward = 0.01
             # punishment for dying
             elif reward < 0:
                 total_reward = -1
-
-            #agent.set_perception(next_observation, action, reward, p.game_over())
 
             agent.set_perception(next_observation, action, total_reward, p.game_over())
 
             if p.game_over():
                 break
 
-    agent.save_brain_state('./brains/fist_trained_brain_3.h5')
-    agent.save_brain_state('./brains/fist_trained_brain_' + datetime.datetime.now() + '.h5')
+        agent.save_brain_state('./brains/fist_trained_brain_' + str(e) + '.h5')
+
     return agent
 
 

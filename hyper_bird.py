@@ -23,7 +23,7 @@ class PortableBrain:
         self.epsilon = 1.0  # exploration rate
         self.epsilon_min = 0.001
         self.epsilon_decay = 0.9999
-        self.learning_rate = 0.001
+        self.learning_rate = 0.00001
         self.observation_time = 100
 
         self.time_step = 0
@@ -45,9 +45,11 @@ class PortableBrain:
     def build_model_for_brain(self):
         model = Sequential()
         model.add(Dense(512, input_dim=self.input_size*self.frame_size, activation='relu'))
+        model.add(BatchNormalizer)
         model.add(Dense(256, activation='relu'))
+        model.add(BatchNormalizer)
         model.add(Dense(self.action_size, activation='linear'))
-        model.compile(loss=self.huber_loss, optimizer=Adam(lr=self.learning_rate))
+        model.compile(loss=self.mse_dqn, optimizer=Adam(lr=self.learning_rate))
 
         return model
 
@@ -63,6 +65,12 @@ class PortableBrain:
         quadratic_loss = 0.5 * K.square(clip_delta) + clip_delta * (K.abs(error) - clip_delta)
 
         return K.mean(tf.where(cond, squared_loss, quadratic_loss))
+    """
+        Mean squared error in DQN 1/N*(y-Q_t)^2 where y = r + (1-done) * gamma * Q_t1
+    """
+    def mse_dqn(self, y_true, y_pred):
+        error = y_pred - y_true
+        return K.mean(K.square(error))
 
     def update_target_model(self):
         # copy weights from model to target_model
@@ -82,16 +90,16 @@ class HyperBird:
         self.batch_size = batch_size
         self.brain = PortableBrain(self.input_size, len(self.allowed_actions), frame_size)
 
-    def pick_action(self, state, is_being_trained=False):
+    def pick_action(self, observation, is_being_trained=False):
         if is_being_trained:
             if np.random.rand() <= self.brain.epsilon:
                 return random.randrange(self.action_size)
 
-            act_values = self.predict(state)
+            act_values = self.predict(observation)
 
             return np.argmax(act_values[0])  # returns action
         else:
-            act_values = self.predict(state)
+            act_values = self.predict(observation)
 
             return np.argmax(act_values[0])  # returns action
 
@@ -107,15 +115,14 @@ class HyperBird:
                 state_t1 = np.reshape(next_states[i], [1, len(next_states[i])])
                 done = dones[i]
 
-                target = self.brain.model.predict(state_t)
-                if done:
-                    target[0][action_t] = reward_t
-                else:
-                    t = self.brain.target_model.predict(state_t1)[0]
-                    target[0][action_t] = reward_t + self.brain.gamma * np.amax(t)
+                y_t = self.brain.model.predict(state_t)[0]
+
+                q_values_t1 = self.brain.target_model.predict(state_t1)[0]
+
+                y_t[action_t] = reward_t + (1 - done) * self.brain.gamma * np.amax(q_values_t1)
 
                 # train network
-                self.brain.model.fit(state_t, target, epochs=1, verbose=0)
+                self.brain.model.fit(state_t, y_t, epochs=1, verbose=0)
         if self.brain.epsilon > self.brain.epsilon_min:
             self.brain.epsilon *= self.brain.epsilon_decay
 
@@ -149,7 +156,6 @@ class HyperBird:
             self.update_brain()
 
         self.brain.current_state = new_state
-        print("Timestep: {}, reward: {}, epsilon: {:.2}".format(self.brain.time_step, reward, self.brain.epsilon))
         if done:
             print("Timestep: {}, reward: {}, epsilon: {:.2}".format(self.brain.time_step, reward, self.brain.epsilon))
 
