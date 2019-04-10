@@ -62,7 +62,8 @@ def train_the_bird():
             if p.game_over():
                 break
 
-        agent.save_brain_state('./brains/fist_trained_brain_' + str(e) + '.h5')
+        if e % 5000 == 0:
+            agent.save_brain_state('./brains/fist_trained_brain_' + str(e) + '.h5')
 
     return agent
 

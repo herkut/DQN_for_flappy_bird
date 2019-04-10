@@ -4,7 +4,7 @@ from collections import deque
 import numpy as np
 
 from keras import Sequential
-from keras.layers import Dense
+from keras.layers import Dense, BatchNormalization
 from keras.optimizers import Adam
 from keras import backend as K
 import keras
@@ -24,11 +24,11 @@ class PortableBrain:
         self.epsilon_min = 0.001
         self.epsilon_decay = 0.9999
         self.learning_rate = 0.00001
-        self.observation_time = 100
+        self.observation_time = 1000
 
         self.time_step = 0
 
-        self.update_time = 100
+        self.update_time = 500
 
         self.frame_size = frame_size
         self.current_state = np.zeros(self.frame_size * input_size)
@@ -45,9 +45,9 @@ class PortableBrain:
     def build_model_for_brain(self):
         model = Sequential()
         model.add(Dense(512, input_dim=self.input_size*self.frame_size, activation='relu'))
-        model.add(BatchNormalizer)
+        model.add(BatchNormalization())
         model.add(Dense(256, activation='relu'))
-        model.add(BatchNormalizer)
+        model.add(BatchNormalization())
         model.add(Dense(self.action_size, activation='linear'))
         model.compile(loss=self.mse_dqn, optimizer=Adam(lr=self.learning_rate))
 
@@ -103,7 +103,7 @@ class HyperBird:
 
             return np.argmax(act_values[0])  # returns action
 
-    def replay(self):
+    def train_q_network(self):
         minibatch = random.sample(self.brain.memory, self.batch_size)
         normalized_minibatch = self.batch_normalizer.normalize_batch(minibatch)
 
@@ -115,11 +115,11 @@ class HyperBird:
                 state_t1 = np.reshape(next_states[i], [1, len(next_states[i])])
                 done = dones[i]
 
-                y_t = self.brain.model.predict(state_t)[0]
+                y_t = self.brain.model.predict(state_t)
 
-                q_values_t1 = self.brain.target_model.predict(state_t1)[0]
+                q_values_t1 = self.brain.target_model.predict(state_t1)
 
-                y_t[action_t] = reward_t + (1 - done) * self.brain.gamma * np.amax(q_values_t1)
+                y_t[0][action_t] = reward_t + (1 - done) * self.brain.gamma * np.amax(q_values_t1[0])
 
                 # train network
                 self.brain.model.fit(state_t, y_t, epochs=1, verbose=0)
@@ -149,7 +149,7 @@ class HyperBird:
         self.brain.remember(self.brain.current_state, action, reward, new_state, done)
 
         if self.brain.time_step > self.brain.observation_time:
-            self.replay()
+            self.train_q_network()
 
         if self.brain.time_step % self.brain.update_time == 0:
             print('Updating the brain')
